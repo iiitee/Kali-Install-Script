@@ -5,6 +5,23 @@
 #I decided on a modifiable script instead. When I started to build the script, 
 #I built upon the foundation that Matthew Clark May had used in a Repository he created, but no longer maintains. Credit where it's due.
 
+#if issues when running and saved using windows run this
+#sed -i -e 's/\r$//'scriptname.sh
+
+echo updating power settings
+#pre-login power settings
+#sudo -i -u Debian-gdm dbus-launch gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'
+#sudo -i -u Debian-gdm dbus-launch gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing'
+
+#update default gdm3 profile to not sleep at login prompt
+sed -i 's/# sleep-inactive-ac-type=.*/sleep-inactive-ac-type='"'"'nothing'"'"'/g' /etc/gdm3/greeter.dconf-defaults
+sed -i 's/# sleep-inactive-battery-type=.*/sleep-inactive-battery-type='"'"'nothing'"'"'/g' /etc/gdm3/greeter.dconf-defaults
+
+#user power settings
+sudo -i -u eagadmin dbus-launch gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'
+sudo -i -u eagadmin dbus-launch gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing'
+
+
 apt-get update ; apt-get -y upgrade ; apt-get -y dist-upgrade ; apt-get -y autoremove ; apt-get -y autoclean ; echo
 
 apt install -y golang
@@ -12,17 +29,41 @@ apt install -y golang
 apt install -y virtualenv
 apt install -y python3.11-venv
 apt install -y python3-venv
+apt install -y tmux
+
+#remove preinstalled cme, causes issues with install here
+apt remove -y crackmapexec
+
 
 python3 -m pip install pipx
 
-apt-get install brutespray -y
+#set pipx path in bash and zsh profile for root profile
+echo "export PATH=\"\$PATH:/root/.local/bin\"" >> /root/.bashrc
+echo "export PATH=\"\$PATH:/root/.local/bin\"" >> /root/.zshrc
+
+#set pipx path for bash and zsh on any other profiles
+for dir in /home/*/; do
+   if test -f $dir/.bashrc; then
+	   echo "export PATH=\"\$PATH:$dir.local/bin\"" >> $dir/.bashrc
+   fi
+   if test -f $dir/.zshrc; then
+	   echo "export PATH=\"\$PATH:$dir.local/bin\"" >> $dir/.zshrc
+   fi
+done
+
+
+#apt-get install -y brutespray
 apt-get install -y gobuster
 apt-get install -y amass
 apt-get install -y masscan
 
-wget https://www.tenable.com/downloads/api/v2/pages/nessus/files/Nessus-10.6.0-debian10_amd64.deb -O nessus-install.deb
+#get nessus version for download
+echo Input Nessus Version Number ex 10.6.4
+read nessus_version
+
+wget https://www.tenable.com/downloads/api/v2/pages/nessus/files/Nessus-$nessus_version-debian10_amd64.deb -O nessus-install.deb
 dpkg -i nessus-install.deb
-wget https://www.tenable.com/downloads/api/v2/pages/nessus/files/nessus-updates-10.6.0.tar.gz -O nessus-updates.tar.gz
+wget https://www.tenable.com/downloads/api/v2/pages/nessus/files/nessus-updates-$nessus_version.tar.gz -O nessus-updates.tar.gz
 /opt/nessus/sbin/nessuscli update nessus-updates.tar.gz
 
 
@@ -31,6 +72,13 @@ go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest
 ln -s /opt/nuclei/bin/nuclei /usr/local/bin/nuclei
 nuclei -update-templates
 
+export GOPATH=/opt/kerbrute
+go install github.com/ropnop/kerbrute@latest
+ln -s /opt/kerbrute/bin/kerbrute /usr/local/bin/kerbrute
+
+export GOPATH=/opt/brutespray
+go install -v github.com/x90skysn3k/brutespray@latest
+ln -s /opt/brutespray/bin/brutespray /usr/local/bin/brutespray
 
 #mkdir /root/gist
 #wget https://gist.githubusercontent.com/nullenc0de/96fb9e934fc16415fbda2f83f08b28e7/raw/146f367110973250785ced348455dc5173842ee4/content_discovery_nullenc0de.txt -O /root/gist/content_discovery_nullenc0de.txt
@@ -177,15 +225,6 @@ echo "-------------------------------------------------------------------"
 echo "--------------- Certipy Installed, Next Tool! ----------------"
 echo "-------------------------------------------------------------------"
 
-#sudo git clone https://github.com/derv82/wifite2.git
-#cd wifite2
-#sudo python setup.py install
-cd /opt
-
-echo "-------------------------------------------------------------------"
-echo "--------------- Wifite2 Installed, Next Tool! ----------------"
-echo "-------------------------------------------------------------------"
-
 sudo git clone https://github.com/trustedsec/SeeYouCM-Thief.git
 cd SeeYouCM-Thief
 python3 -m venv venv_SeeYouCM-Thief
@@ -213,7 +252,7 @@ echo "-------------------------------------------------------------------"
 
 git clone https://github.com/SySS-Research/Seth.git
 cd Seth
-python3 -m venv .Seth_venv
+python3 -m venv venv_Seth
 source venv_Seth/bin/activate
 venv_Seth/bin/pip3 install -r requirements.txt
 deactivate
@@ -224,16 +263,16 @@ echo "--------------- Seth Installed, Next Tool! ----------------"
 echo "-------------------------------------------------------------------"
 
 git clone https://github.com/Arvanaghi/SessionGopher.git
-
-git clone --depth 1 https://github.com/v1s1t0r1sh3r3/airgeddon.git
+cd /opt
 
 echo "-------------------------------------------------------------------"
-echo "--------------- airgeddon Installed, Next Tool! ----------------"
+echo "--------------- SessionGopher Installed, Next Tool! ----------------"
 echo "-------------------------------------------------------------------"
 
 git clone https://github.com/RedSiege/EyeWitness.git
 cd /opt/EyeWitness/Python/setup
 sudo ./setup.sh
+sudo chmod -R 777 /opt/EyeWitness/Python
 cd /opt
 
 echo "-------------------------------------------------------------------"
@@ -262,12 +301,14 @@ echo "--------------- Predz Installed, Next Tool! ----------------"
 echo "-------------------------------------------------------------------"
 
 pipx install pypykatz
+pipx install git+https://github.com/Pennyw0rth/NetExec
 
 pipx install ldapdomaindump
 pipx install adidnsdump
 pipx install mitm6
 gem install evil-winrm
 pipx install bloodhound
+pipx install coercer
 
 apt-get install -y docker.io
 apt-get install -y docker-compose
@@ -277,7 +318,7 @@ mkdir /opt/BloodHoundCE
 wget https://ghst.ly/BHCEDocker -O /opt/BloodHoundCE/docker-compose.yml
 cd /opt/BloodHoundCE
 docker-compose pull
-cd ~/Downloads
+
 
 echo "-------------------------------------------------------------------"
 echo "--------------- All Tools Installed/Updated! Go Break Some Stuff! ---------"
