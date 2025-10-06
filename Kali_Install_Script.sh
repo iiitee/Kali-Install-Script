@@ -8,8 +8,11 @@
 #if issues when running and saved using windows run this
 #sed -i -e 's/\r$//'scriptname.sh
 
+# Redirect stdout and stderr to a log file
+exec > >(tee -a Kali_install_script_output.log) 2>&1
+
 #update Kali
-sudo apt-get update ; sudo apt-get -y upgrade ; sudo apt-get -y dist-upgrade ; sudo apt-get -y autoremove ; sudo apt-get -y autoclean ; echo
+sudo apt-get update ; sudo apt-get full-upgrade -y ; sudo apt-get autoremove -y ; sudo apt-get autoclean -y ; echo
 
 echo updating power settings
 #pre-login power settings
@@ -32,7 +35,7 @@ sudo sed -i '/HandleLidSwitch/{s/#//;s/suspend/ignore/}' /etc/systemd/logind.con
 sudo apt install -y golang
 
 # install python
-sudo apt install -y virtualenv python3.11-venv python3-venv pipx
+sudo apt install -y virtualenv python3-all-venv python3-venv pipx
 
 #install tmux
 sudo apt install -y tmux
@@ -74,7 +77,7 @@ sudo /opt/nessus/sbin/nessuscli update nessus-updates.tar.gz
 #install software with go
 
 export GOPATH=/opt/nuclei
-sudo -E go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest
+sudo -E go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 sudo ln -s /opt/nuclei/bin/nuclei /usr/local/bin/nuclei
 nuclei -update-templates
 
@@ -94,11 +97,16 @@ export GOPATH=/opt/gowitness
 sudo -E go install github.com/sensepost/gowitness@latest
 sudo ln -s /opt/gowitness/bin/gowitness /usr/local/bin/gowitness
 
+export GOPATH=/opt/go-out
+sudo -E go install -v github.com/sensepost/go-out@latest
+sudo ln -s /opt/go-out/bin/go-out /usr/local/bin/go-out
+
 #install pipx tools
 
 pipx install pypykatz
 pipx install git+https://github.com/Pennyw0rth/NetExec
 pipx install git+https://github.com/blacklanternsecurity/MANSPIDER
+pipx install git+https://github.com/iiitee/parsuite
 
 pipx install ldapdomaindump
 pipx install adidnsdump
