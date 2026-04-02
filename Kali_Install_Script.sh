@@ -14,22 +14,71 @@ exec > >(tee -a Kali_install_script_output.log) 2>&1
 #update Kali
 sudo apt-get update ; sudo apt-get full-upgrade -y ; sudo apt-get autoremove -y ; sudo apt-get autoclean -y ; echo
 
-echo updating power settings
-#pre-login power settings
-sudo -i -u Debian-gdm dbus-launch gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'
-sudo -i -u Debian-gdm dbus-launch gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing'
+# ==========================================
+# Kali Linux XFCE Power Management Hardening
+# ==========================================
 
-#update default gdm3 profile to not sleep at login prompt
-sudo sed -i 's/# sleep-inactive-ac-type=.*/sleep-inactive-ac-type='"'"'nothing'"'"'/g' /etc/gdm3/greeter.dconf-defaults
-sudo sed -i 's/# sleep-inactive-battery-type=.*/sleep-inactive-battery-type='"'"'nothing'"'"'/g' /etc/gdm3/greeter.dconf-defaults
+# 1. Pre-login power settings (systemd-logind)
+# Prevents the system from sleeping or suspending on lid close at the login screen
+# or system level (before login).
+sudo mkdir -p /etc/systemd/logind.conf.d
+sudo tee /etc/systemd/logind.conf.d/10-no-idle-sleep.conf > /dev/null <<'EOF'
+[Login]
+IdleAction=ignore
+IdleActionSec=0
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+EOF
 
-#user power settings
-dbus-launch gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'
-dbus-launch gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing'
+echo "[*] Systemd-logind configuration updated."
 
-#set lid action to not sleep on close
-sudo sed -i '/IgnoreLid=/{s/false/true/}' /etc/UPower/UPower.conf 
-sudo sed -i '/HandleLidSwitch/{s/#//;s/suspend/ignore/}' /etc/systemd/logind.conf
+# 2. LightDM / X Server DPMS Settings
+# Disables screensaver and DPMS (Display Power Management) on the login screen.
+sudo mkdir -p /etc/lightdm/lightdm.conf.d
+sudo tee /etc/lightdm/lightdm.conf.d/50-no-dpms.conf > /dev/null <<'EOF'
+[Seat:*]
+xserver-command=X -s 0 -dpms
+EOF
+
+echo "[*] LightDM configuration updated."
+
+# 3. User power settings (XFCE)
+# Disable sleep on lid close or inactivity when logged in.
+TARGET_USER=${SUDO_USER:-root}
+
+echo "[*] Applying XFCE Power Manager settings for user: $TARGET_USER"
+
+# Helper function to run xfconf-query as the target user
+run_xfconf() {
+    sudo -u "$TARGET_USER" xfconf-query -c xfce4-power-manager "$@"
+}
+
+# Disable sleep actions when logged in (on AC and on battery)
+# Inactivity sleep mode (0 = Do nothing)
+run_xfconf -p /xfce4-power-manager/inactivity-sleep-mode-on-ac --create -t int -s 0
+run_xfconf -p /xfce4-power-manager/inactivity-sleep-mode-on-battery --create -t int -s 0
+
+# Set inactivity timeout to never (0 = Never)
+run_xfconf -p /xfce4-power-manager/inactivity-on-ac --create -t uint -s 0
+run_xfconf -p /xfce4-power-manager/inactivity-on-battery --create -t uint -s 0
+
+# Disable DPMS (Display Power Management)
+run_xfconf -p /xfce4-power-manager/dpms-enabled --create -t bool -s false
+
+# Lid action (0 = Nothing, 1 = Suspend, 2 = Hibernate, 3 = Shutdown, 4 = Lock screen, 5 = Switch off display)
+run_xfconf -p /xfce4-power-manager/lid-action-on-ac --create -t uint -s 0
+run_xfconf -p /xfce4-power-manager/lid-action-on-battery --create -t uint -s 0
+
+echo "[*] XFCE settings applied."
+
+# 4. Restart services to apply system-level changes
+echo "[*] Restarting systemd-logind and upower..."
+sudo systemctl restart systemd-logind
+sudo systemctl restart upower
+
+echo "[Done] Power settings configured. Please log out and back in if XFCE settings don't apply immediately."
+
 
 # install golang
 sudo apt install -y golang
@@ -50,6 +99,22 @@ sudo apt install -y docker-compose
 #remove preinstalled software that causes some conflicts with updated installs below
 sudo apt remove -y crackmapexec tightvncserver netexec evil-winrm
 
+source ./Vnc-info.txt
+
+sudo apt install -y xterm
+
+curl -L -o VNC.deb https://downloads.realvnc.com/download/file/vnc.files/VNC-Server-Latest-Linux-x64.deb
+sudo apt install -y ./VNC.deb
+
+echo 'AllowIpListenRfb=0' | sudo tee -a /root/.vnc/config.d/vncserver-x11
+echo 'EnableAnalytics=0' | sudo tee -a /root/.vnc/config.d/vncserver-x11
+echo 'EnableAutoUpdateChecks=1' | sudo tee -a /root/.vnc/config.d/vncserver-x11
+echo 'Encryption=AlwaysMaximum' | sudo tee -a /root/.vnc/config.d/vncserver-x11
+
+sudo vncserver-x11 -service -joinCloud "$VNC_Cloud_Token" -joinGroup "$VNC_Group"
+
+read -p "Press any key to resume ..."
+
 #set pipx path in bash and zsh profile for root profile
 echo "export PATH=\"\$PATH:/root/.local/bin\"" | sudo tee -a /root/.bashrc
 echo "export PATH=\"\$PATH:/root/.local/bin\"" | sudo tee -a /root/.zshrc
@@ -63,16 +128,6 @@ for dir in /home/*/; do
 	   echo "export PATH=\"\$PATH:$dir.local/bin\"" >> $dir/.zshrc
    fi
 done
-
-
-#get nessus version for download
-echo Input Nessus Version Number ex 10.6.4
-read nessus_version
-
-wget https://www.tenable.com/downloads/api/v2/pages/nessus/files/Nessus-$nessus_version-debian10_amd64.deb -O nessus-install.deb
-sudo dpkg -i nessus-install.deb
-wget https://www.tenable.com/downloads/api/v2/pages/nessus/files/nessus-updates-$nessus_version.tar.gz -O nessus-updates.tar.gz
-sudo /opt/nessus/sbin/nessuscli update nessus-updates.tar.gz
 
 #install software with go
 
@@ -107,6 +162,7 @@ pipx install pypykatz
 pipx install git+https://github.com/Pennyw0rth/NetExec
 pipx install git+https://github.com/blacklanternsecurity/MANSPIDER
 pipx install git+https://github.com/iiitee/parsuite
+#pipx install git+https://github.com/lgandx/Responder
 
 pipx install ldapdomaindump
 pipx install adidnsdump
@@ -136,6 +192,8 @@ sudo git clone https://github.com/projectdiscovery/nuclei-templates.git
 
 #sudo git clone https://github.com/danielmiessler/SecLists.git
 
+sudo git clone https://github.com/Flangvik/statistically-likely-usernames.git
+
 sudo git clone https://github.com/Greenwolf/Spray.git
 
 sudo git clone https://github.com/vulnersCom/nmap-vulners.git
@@ -149,6 +207,14 @@ cd SeeYouCM-Thief
 python3 -m venv venv_SeeYouCM-Thief
 source venv_SeeYouCM-Thief/bin/activate
 venv_SeeYouCM-Thief/bin/pip3 install -r requirements.txt
+deactivate
+cd /opt
+
+sudo git clone https://github.com/cisagov/snafflepy.git
+cd snafflepy
+python3 -m venv venv_snafflepy
+source venv_snafflepy/bin/activate
+venv_snafflepy/bin/pip3 install -r requirements.txt
 deactivate
 cd /opt
 
@@ -172,6 +238,8 @@ cd /opt
 sudo git clone https://github.com/Arvanaghi/SessionGopher.git
 cd /opt
 
+sudo git clone https://github.com/secorizon/MSFinger.git
+
 sudo git clone https://github.com/TKCERT/nessus-report-downloader.git
 
 sudo git clone https://github.com/topotam/PetitPotam.git
@@ -179,7 +247,7 @@ sudo git clone https://github.com/topotam/PetitPotam.git
 sudo git clone https://github.com/lgandx/PCredz.git
 cd PCredz
 sudo docker build . -t pcredz
-printf "run the following command from directory with data to analyze \n docker run --net=host -v \$(pwd):/opt/Pcredz/data -it pcredz\n" | sudo tee README_RUN_DOCKER.txt
+printf "run the following command from directory with data to analyze \n docker run --rm -v \$(pwd):/data pcredz -f /data/capture.pcap\n" | sudo tee README_RUN_DOCKER.txt
 cd /opt
 
 sudo git clone https://github.com/iiitee/changeme.git
@@ -188,7 +256,9 @@ sudo docker build -t changeme .
 printf "run the following command with commandline options and targets \n docker run -it changeme \n" | sudo tee README_RUN_DOCKER.txt
 cd /opt
 
+sudo docker pull tenable/nessus:latest-ubuntu
 sudo docker pull bettercap/bettercap
+
 sudo mkdir /opt/BloodHoundCE
 sudo wget https://ghst.ly/getbhce -O /opt/BloodHoundCE/docker-compose.yml
 cd /opt/BloodHoundCE
