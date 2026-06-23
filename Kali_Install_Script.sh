@@ -235,6 +235,16 @@ venv_Seth/bin/pip3 install -r requirements.txt
 deactivate
 cd /opt
 
+sudo git clone https://github.com/MWR-CyberSec/PXEThief.git
+cd PXEThief
+sudo git fetch origin pull/11/head:pr-11
+sudo git checkout pr-11
+python3 -m venv venv_pxethief
+source venv_pxethief/bin/activate
+sudo venv_pxethief/bin/pip3 install -r requirements.txt 
+deactivate
+cd /opt
+
 sudo git clone https://github.com/Arvanaghi/SessionGopher.git
 cd /opt
 
@@ -254,6 +264,12 @@ sudo git clone https://github.com/iiitee/changeme.git
 cd changeme/
 sudo docker build -t changeme .
 printf "run the following command with commandline options and targets \n docker run -it changeme \n" | sudo tee README_RUN_DOCKER.txt
+cd /opt
+
+sudo git clone https://github.com/RedSiege/EyeWitness.git
+cd EyeWitness/setup
+sudo ./setup.sh
+sudo chmod -R o+w /opt/EyeWitness
 cd /opt
 
 sudo docker pull tenable/nessus:latest-ubuntu
